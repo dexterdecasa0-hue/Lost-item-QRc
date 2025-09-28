@@ -2,42 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Lost Item Registration</title>
+  <title>Item Details</title>
   <style>
     body { font-family: Arial; padding: 20px; }
-    form { max-width: 400px; margin: auto; }
-    label { display: block; margin-top: 10px; }
-    input, button { width: 100%; padding: 10px; margin-top: 5px; border:1px solid #ccc; border-radius:5px;}
-    button { background:#004080; color:white; cursor:pointer; }
-    #qrContainer { text-align:center; margin-top:20px; }
-    #emailNotice { color:green; font-weight:bold; text-align:center; margin-top:10px; }
-    table { width:100%; border-collapse:collapse; margin-top:20px; }
-    th, td { border:1px solid #ccc; padding:5px; text-align:left; }
-    th { background:#004080; color:white; }
+    #itemDetails { max-width: 500px; margin: auto; border: 1px solid #ccc; padding: 20px; border-radius: 5px; }
+    button { background:#004080; color:white; padding:10px; border:none; border-radius:5px; cursor:pointer; margin-top:10px; }
+    p { margin: 5px 0; }
   </style>
 </head>
 <body>
 
-<h1>Register Lost Item</h1>
-
-<form id="registerForm">
-  <label>Full Name</label>
-  <input type="text" id="name" required>
-
-  <label>University Email</label>
-  <input type="email" id="email" placeholder="name@universityofbohol.edu.ph" required>
-
-  <label>Item Name</label>
-  <input type="text" id="item" required>
-
-  <button type="submit">Register</button>
-</form>
-
-<div id="qrContainer"></div>
-<p id="emailNotice"></p>
-
-<h2>Posted Items</h2>
-<div id="postedItems"></div>
+<h1>Item Details</h1>
+<div id="itemDetails">
+  <p><strong>Item Name:</strong> <span id="itemName"></span></p>
+  <p><strong>Owner Name:</strong> <span id="ownerName"></span></p>
+  <p><strong>Status:</strong> <span id="itemStatus"></span></p>
+  <button id="reportFoundBtn">Report Found</button>
+</div>
 
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
@@ -58,91 +39,45 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  // QR code generator (placeholder)
-  function generateQR(text, size=150){
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width=canvas.height=size;
-    ctx.fillStyle="white"; ctx.fillRect(0,0,size,size);
-    ctx.fillStyle="black"; ctx.font="14px Arial";
-    ctx.fillText("QR for:",10,20);
-    ctx.fillText(text,10,40);
-    return canvas;
-  }
+  // Get item ID from URL
+  const params = new URLSearchParams(window.location.search);
+  const itemId = params.get('item');
 
-  // Register form
-  document.getElementById("registerForm").addEventListener("submit", function(e){
-    e.preventDefault();
+  if(!itemId) {
+    alert("Invalid QR code or URL.");
+    document.getElementById("itemDetails").style.display = "none";
+  } else {
+    const itemRef = db.ref("lostItems/" + itemId);
+    itemRef.once("value", snapshot => {
+      const item = snapshot.val();
+      if(!item) {
+        alert("Item not found in database.");
+        document.getElementById("itemDetails").style.display = "none";
+      } else {
+        document.getElementById("itemName").innerText = item.item;
+        document.getElementById("ownerName").innerText = item.name;
+        document.getElementById("itemStatus").innerText = item.status;
 
-    const name = document.getElementById("name").value.trim();
-    const email = document.getElementById("email").value.trim();
-    const item = document.getElementById("item").value.trim();
-
-    if(!email.endsWith("@universityofbohol.edu.ph")){
-      alert("❌ Please use your University of Bohol email.");
-      return;
-    }
-
-    const id = Date.now();
-    const newItem = { id, name, email, item, status:"Pending" };
-
-    db.ref("lostItems/"+id).set(newItem)
-      .then(()=>{
-        const qrLink = window.location.origin + "/item.html?item=" + id;
-        const qr = generateQR(qrLink);
-        const container = document.getElementById("qrContainer");
-        container.innerHTML="<h3>Your QR Code:</h3>";
-        container.appendChild(qr);
-
-        document.getElementById("emailNotice").innerText = `📧 Confirmation email sent to ${email} (simulated).`;
-        document.getElementById("registerForm").reset();
-
-        // Update posted items table
-        displayPostedItems();
-      })
-      .catch(err => alert("❌ Error: "+err));
-  });
-
-  // Display all posted items
-  function displayPostedItems() {
-    const container = document.getElementById("postedItems");
-    container.innerHTML = "<p>Loading items...</p>";
-
-    db.ref("lostItems").once("value", snapshot => {
-      container.innerHTML = "";
-      const items = snapshot.val();
-      if (!items) {
-        container.innerHTML = "<p>No items posted yet.</p>";
-        return;
+        // Report found button
+        const btn = document.getElementById("reportFoundBtn");
+        if(item.status === "Found") {
+          btn.disabled = true;
+          btn.innerText = "Already Reported";
+        } else {
+          btn.addEventListener("click", () => {
+            itemRef.update({status: "Found"})
+              .then(() => {
+                alert("✅ Item status updated to Found.");
+                document.getElementById("itemStatus").innerText = "Found";
+                btn.disabled = true;
+                btn.innerText = "Already Reported";
+              })
+              .catch(err => alert("❌ Error: " + err));
+          });
+        }
       }
-
-      const table = document.createElement("table");
-      table.innerHTML = `
-        <tr>
-          <th>Item Name</th>
-          <th>Owner</th>
-          <th>Status</th>
-          <th>View</th>
-        </tr>
-      `;
-
-      Object.values(items).forEach(item => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${item.item}</td>
-          <td>${item.name}</td>
-          <td>${item.status}</td>
-          <td><a href="item.html?item=${item.id}">View</a></td>
-        `;
-        table.appendChild(tr);
-      });
-
-      container.appendChild(table);
     });
   }
-
-  // Load posted items on page load
-  displayPostedItems();
 </script>
 
 </body>
